@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" href="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.3.0/css/ol.css" type="text/css">
+    <style>
+      .map {
+        height: 400px;
+        width: 100%;
+      }
+    </style>
+    <script src="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.3.0/build/ol.js"></script>
+    <title>OpenLayers example</title>
+  </head>
+  <body>
+    <h2>My Map</h2>
+    <div id="map" class="map"></div>
+    <script type="text/javascript">
+    var projection = ol.proj.get("EPSG:3857");  
+    var projectionExtent = projection.getExtent();
+
+    var resolutions = [];  
+    for (var i = 0; i < 19; i++) {  
+        resolutions[i] = Math.pow(2, 18 - i);  
+    }  
+    var tilegrid = new ol.tilegrid.TileGrid({  
+        origin: ol.extent.getBottomLeft(projectionExtent),  
+        resolutions: resolutions  
+    });  
+
+    var tileExtent = function(tileCoord){
+      var z = tileCoord[0];
+      var x = tileCoord[1];
+      var y = tileCoord[2];
+      var tileGridOrigin = tilegrid.getOrigin(z);
+      var tileSizeAtResolution = tilegrid.getTileSize(z) * tilegrid.getResolution(z);
+      return [
+          tileGridOrigin[0] + tileSizeAtResolution * x,
+          tileGridOrigin[1] + tileSizeAtResolution * y,
+          tileGridOrigin[0] + tileSizeAtResolution * (x + 1),
+          tileGridOrigin[1] + tileSizeAtResolution * (y + 1)
+      ];
+    }  
+
+    function long2tile(lon,zoom1) { 
+      tt = Number(lon);
+      return (Math.floor((tt+180)/360*Math.pow(2,zoom1)));
+    }
+
+    function lat2tile(lat,zoom2)  { 
+      return (Math.floor((1-Math.log(Math.tan(lat*Math.PI/180) + 1/Math.cos(lat*Math.PI/180))/Math.PI)/2 *Math.pow(2,zoom2))); 
+    }
+
+    function tile2long(x,z) {
+      return (x/Math.pow(2,z)*360-180);
+    }
+    
+    function tile2lat(y,z) {
+      var n=Math.PI-2*Math.PI*y/Math.pow(2,z);
+      return (180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))));
+    }
+
+    function inside(point, vs) {
+        // ray-casting algorithm based on
+        // http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html
+        
+        var x = point[0], y = point[1];
+        
+        var inside = false;
+        for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            var xi = vs[i][0], yi = vs[i][1];
+            var xj = vs[j][0], yj = vs[j][1];
+            
+            var intersect = ((yi > y) != (yj > y))
+                && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        
+        return inside;
+    };
+    var polygon = [ [ 87, 48 ], [ 73, 39 ], [ 82, 29 ], [ 98, 27 ], [ 100, 22], [117, 24], [121, 31], [ 134 , 48], [ 120 , 53 ], [ 104 , 41] ];
+    var baidu_source = new ol.source.TileImage({  
+        projection: projection,  
+        tileGrid: tilegrid,  
+        opaque: false,
+        tileUrlFunction: function (tileCoord, pixelRatio, proj) {  
+            if (!tileCoord) {  
+                return "";  
+            }  
+            var z = tileCoord[0];  
+            var x = tileCoord[1];  
+            var y = tileCoord[2];  
+            if (x < 0) {  
+                x = "M" + (-x);  
+            }  
+            if (y < 0) {  
+                y = "M" + (-y);  
+            }  
+            return "http://online3.map.bdimg.com/onlinelabel/?qt=tile&x=" + x + "&y=" + y + "&z=" + z + "&styles=pl&udt=20170809&scaler=1&p=1";  
+        }  
+    });  
+  
+    var baiduMapLayer = new ol.layer.Tile({  
+        source: baidu_source  
+    });
+
+    var amapMapLayer = new ol.layer.Tile({  
+      source: new ol.source.XYZ({
+          // url: 'https://grid.amap.com/grid/{z}/{x}/{y}?src=jsapi&key=&lang=en&dpiType=webrd',
+          tileSize: 512,
+          opaque: false,
+          minZoom: 3,
+          tileUrlFunction: function (tileCoord) {  
+              if (!tileCoord) {  
+                  return "";  
+              }  
+              var z = tileCoord[0];  
+              var x = tileCoord[1];  
+              var y = tileCoord[2];
+              var url;  
+              if (x < 0) {  
+                  x = (-x) - 1;  
+              }  
+              if (y < 0) {  
+                  y = (-y) - 1;  
+              } 
+
+              var lon = tile2long(x, z);
+              var lan = tile2lat(y, z);
+
+              if (z >= 10) {
+                if (inside([ lon, lan], polygon)) {
+                  url = "http://wprd01.is.autonavi.com/appmaptile?lang=en&size=1&style=7&x=" + x + "&y=" + y + "&z=" + z; 
+                }
+                else {
+                  url = "https://grid.amap.com/grid/" + z + "/" + x + "/" + y +"?src=jsapi&key=&lang=en&dpiType=webrd";
+                }
+              }
+              else {
+                url = "http://wprd01.is.autonavi.com/appmaptile?lang=en&size=1&style=7&x=" + x + "&y=" + y + "&z=" + z;  
+              }
+              console.log("tileUrl:" + url);
+              console.log("lon:" + lon + ", lan:" + lan);
+              console.log("inside:" + inside([ lon, lan], polygon));
+              // a = tileExtent(tileCoord);
+              // console.log(a[0], a[1]);
+              return url;
+              //return "https://grid.amap.com/grid/{z}/{x}/{y}?src=jsapi&key=&lang=en&dpiType=webrd";
+          }
+        }) 
+    })
+
+    var amapWebLayer = new ol.layer.Tile({  
+      source: new ol.source.XYZ({
+          // url: 'https://grid.amap.com/grid/{z}/{x}/{y}?src=jsapi&key=&lang=en&dpiType=webrd',
+          tileSize: 512,
+          opaque: false,
+          minZoom: 3,
+          tileUrlFunction: function (tileCoord) {  
+              if (!tileCoord) {  
+                  return "";  
+              }  
+              var z = tileCoord[0];  
+              var x = tileCoord[1];  
+              var y = tileCoord[2];
+              var url;  
+              if (x < 0) {  
+                  x = (-x) - 1;  
+              }  
+              if (y < 0) {  
+                  y = (-y) - 1;  
+              } 
+
+              var lon = tile2long(x, z);
+              var lan = tile2lat(y, z);
+
+              // if (z >= 10) {
+              //   url = "https://grid.amap.com/grid/" + z + "/" + x + "/" + y +"?src=jsapi&key=&lang=en&dpiType=webrd"; 
+              // }
+              // else {
+              //   url = "http://wprd01.is.autonavi.com/appmaptile?lang=en&size=1&style=7&x=" + x + "&y=" + y + "&z=" + z;  
+              // }
+              // console.log("tileUrl:" + url);
+              // console.log("lon:" + lon + ", lan:" + lan);
+              // a = tileExtent(tileCoord);
+              // console.log(a[0], a[1]);
+              return "https://restapi.amap.com/v3/staticmap?location=" + lon + "," + lan + "&zoom="+ z + "&size=250*250&key=8e5c01b860f41d0a3eb793e86300e8a2";
+              //return "https://grid.amap.com/grid/{z}/{x}/{y}?src=jsapi&key=&lang=en&dpiType=webrd";
+          }
+        }) 
+    })
+
+    var AmapGridLayer = new ol.layer.Tile({
+        source: new ol.source.XYZ({
+              url: 'https://grid.amap.com/grid/{z}/{x}/{y}?src=jsapi&key=&lang=en&dpiType=webrd',
+              tileSize: 512,
+              opaque: false,
+              minZoom: 3,
+            })
+    });
+
+    
+    
+    var AmapLayer = new ol.layer.Tile({
+        source: new ol.source.XYZ({
+              url: 'http://wprd0{1-4}.is.autonavi.com/appmaptile?lang=en&size=1&style=7&x={x}&y={y}&z={z}',
+              tileSize: 512,
+              opaque: false,
+              minZoom: 3,
+            })
+    });
+
+      var map = new ol.Map({
+        target: 'map',
+        layers: [
+          //baiduMapLayer,
+          // AmapGridLayer,
+          // AmapLayer
+          amapMapLayer
+          // amapWebLayer
+        ],
+        // layers: [baiduMapLayer],
+        view: new ol.View({
+          center: ol.proj.fromLonLat([37.41, 8.82]),
+          zoom: 4
+        })
+      });
+    </script>
+  </body>
+</html>
